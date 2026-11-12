@@ -78,8 +78,9 @@ func Known(name string) bool {
 	return slices.ContainsFunc(registry, func(t Test) bool { return t.Name == name })
 }
 
-// Run runs the named tests in order and reports each result as it finishes. It returns the job's
-// outcome, a summary, and the devices that failed as infrastructure.
+// Run runs the named tests in order and reports each result as it finishes. It stops at the first
+// infrastructure failure. It returns the job's outcome, a summary, and the devices that failed as
+// infrastructure.
 func Run(ctx context.Context, env *Env, names []string, report func(lab.TestResult)) (lab.JobState, string, []string) {
 	var failed []string
 	var infra []string
@@ -101,14 +102,13 @@ func Run(ctx context.Context, env *Env, names []string, report func(lab.TestResu
 			res.Message = "the job timed out during this test"
 		}
 		report(res)
-		switch {
-		case res.Infra:
-			for _, d := range res.Devices {
-				if !slices.Contains(infra, d) {
-					infra = append(infra, d)
-				}
-			}
-		case !res.Passed:
+		if res.Infra {
+			// The lab failed, not the feature. Later tests would fail for the same reason, and on
+			// a hung device each of them would first wait out its timeout.
+			infra = slices.Clone(res.Devices)
+			break
+		}
+		if !res.Passed {
 			failed = append(failed, name)
 		}
 		if ctx.Err() != nil {

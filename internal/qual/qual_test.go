@@ -74,10 +74,10 @@ func TestDownPortFailsTheFeatureNotTheLab(t *testing.T) {
 func TestUnreachableDeviceIsAnInfrastructureFailure(t *testing.T) {
 	env, sim := simEnv(t)
 	sim.SetUnreachable("sw2", true)
-	var got lab.TestResult
-	state, msg, infra := Run(context.Background(), env, []string{"reachable", "bgp-established"}, func(r lab.TestResult) { got = r })
-	if state != lab.Errored || !slices.Equal(infra, []string{"sw2"}) || !got.Infra || !strings.Contains(msg, "sw2") {
-		t.Fatalf("state %s, msg %q, infra %v, last result %+v", state, msg, infra, got)
+	var got []lab.TestResult
+	state, msg, infra := Run(context.Background(), env, []string{"reachable", "bgp-established"}, func(r lab.TestResult) { got = append(got, r) })
+	if state != lab.Errored || !slices.Equal(infra, []string{"sw2"}) || len(got) != 1 || !got[0].Infra || !strings.Contains(msg, "sw2") {
+		t.Fatalf("state %s, msg %q, infra %v, results %+v", state, msg, infra, got)
 	}
 }
 
