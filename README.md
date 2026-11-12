@@ -34,7 +34,7 @@ Each step is checked, and the run fails if any check fails. From a
 
 Tests poll devices every 250 ms, so timings are accurate to about 0.25 s.
 
-Also in CI: 38 Go tests with the race detector, including a property test that checks the device
+Also in CI: 40 Go tests with the race detector, including a property test that checks the device
 matcher against brute force on 3,000 random labs; 60 s of fuzzing of the write-ahead log decoder;
 govulncheck; and 4 Playwright tests that check every dashboard page with axe (WCAG 2.2 AA) and test
 keyboard-only use, reflow at 320 px and forced colors.
@@ -112,7 +112,11 @@ checks that replaying the log rebuilds exactly the same state.
   the commit, and sets the commit status (pending, then success, failure or error). Status updates
   retry server errors and rate limiting with backoff.
 - **BI tools.** `/api/v1/export/results.csv` has one row per test result, with measurements and
-  queue wait; `/api/v1/export/jobs.ndjson` is newline-delimited JSON that loads into BigQuery.
+  queue wait. `/api/v1/export/jobs.ndjson` has one row per job in a fixed schema,
+  [bigquery_schema.json](internal/integrations/bigquery_schema.json): times that have not happened
+  are null, lists are never null, and measurements are name/value pairs, because their names differ
+  from test to test. A test checks every exported row against the schema. To load it:
+  `bq load --source_format=NEWLINE_DELIMITED_JSON lab.jobs jobs.ndjson internal/integrations/bigquery_schema.json`.
 - **Dashboards.** `/metrics` serves Prometheus metrics: devices by status, jobs by state, test
   results by test and outcome, and queue wait.
 

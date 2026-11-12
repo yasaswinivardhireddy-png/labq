@@ -1,0 +1,37 @@
+[
+  {"name": "id", "type": "STRING", "mode": "REQUIRED", "description": "Job ID, such as j-12"},
+  {"name": "name", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "team", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "priority", "type": "INTEGER", "mode": "REQUIRED", "description": "0 low, 1 normal, 2 high"},
+  {"name": "state", "type": "STRING", "mode": "REQUIRED", "description": "queued, running, passed, failed, error or cancelled"},
+  {"name": "attempts", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "submitted_at", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "started_at", "type": "TIMESTAMP", "mode": "NULLABLE", "description": "Start of the last attempt"},
+  {"name": "ended_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "wait_s", "type": "FLOAT", "mode": "NULLABLE", "description": "Seconds from submission to the last start"},
+  {"name": "run_s", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "devices", "type": "RECORD", "mode": "REPEATED", "fields": [
+    {"name": "role", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "device", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "vendor", "type": "STRING", "mode": "NULLABLE"}
+  ]},
+  {"name": "tests", "type": "RECORD", "mode": "REPEATED", "fields": [
+    {"name": "test", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "passed", "type": "BOOLEAN", "mode": "REQUIRED"},
+    {"name": "infra", "type": "BOOLEAN", "mode": "REQUIRED", "description": "The lab failed, not the feature"},
+    {"name": "message", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "duration_ms", "type": "INTEGER", "mode": "REQUIRED"},
+    {"name": "measurements", "type": "RECORD", "mode": "REPEATED", "fields": [
+      {"name": "name", "type": "STRING", "mode": "REQUIRED", "description": "Such as detect_s or recover_s"},
+      {"name": "value", "type": "FLOAT", "mode": "REQUIRED"}
+    ]}
+  ]},
+  {"name": "source", "type": "RECORD", "mode": "NULLABLE", "description": "The GitHub push or pull request that queued the job", "fields": [
+    {"name": "kind", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "repo", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "sha", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "ref", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "pr", "type": "INTEGER", "mode": "NULLABLE"},
+    {"name": "url", "type": "STRING", "mode": "NULLABLE"}
+  ]}
+]

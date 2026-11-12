@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,39 +42,98 @@ func ResultsCSV(w io.Writer, jobs []*lab.Job, devices map[string]*lab.Device) er
 	return cw.Error()
 }
 
-// JobsNDJSON writes one JSON object per job, one per line: the newline-delimited JSON format that
-// BigQuery and most warehouses load directly.
+// JobsNDJSON writes one JSON object per job, one per line: newline-delimited JSON that loads into
+// BigQuery with the schema in bigquery_schema.json. Every row has that one shape: times that have
+// not happened yet are null rather than empty strings, lists are empty rather than null, and
+// measurements are name/value pairs, because their names differ from test to test.
 func JobsNDJSON(w io.Writer, jobs []*lab.Job, devices map[string]*lab.Device) error {
 	enc := json.NewEncoder(w)
 	for _, j := range jobs {
-		type devRow struct {
-			Role   string `json:"role"`
-			Device string `json:"device"`
-			Vendor string `json:"vendor"`
-		}
-		var devs []devRow
-		for _, r := range j.Roles {
-			if id, ok := j.Assignment[r.Name]; ok {
-				devs = append(devs, devRow{r.Name, id, vendorOf(devices, id)})
-			}
-		}
-		row := map[string]any{
-			"id": j.ID, "name": j.Name, "team": j.Team, "priority": j.Priority, "state": j.State,
-			"attempts": j.Attempts, "submitted_at": stamp(j.Submitted), "started_at": stamp(j.Started),
-			"ended_at": stamp(j.Ended), "devices": devs, "tests": j.Results, "source": j.Source,
-		}
-		if s := waitSeconds(j); s != "" {
-			row["wait_s"], _ = strconv.ParseFloat(s, 64)
-		}
-		if !j.Ended.IsZero() && !j.Started.IsZero() {
-			row["run_s"] = j.Ended.Sub(j.Started).Seconds()
-		}
-		if err := enc.Encode(row); err != nil {
+		if err := enc.Encode(newJobRow(j, devices)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+type jobRow struct {
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Team        string       `json:"team"`
+	Priority    int          `json:"priority"`
+	State       lab.JobState `json:"state"`
+	Attempts    int          `json:"attempts"`
+	SubmittedAt *string      `json:"submitted_at"`
+	StartedAt   *string      `json:"started_at"`
+	EndedAt     *string      `json:"ended_at"`
+	WaitS       *float64     `json:"wait_s"`
+	RunS        *float64     `json:"run_s"`
+	Devices     []deviceRow  `json:"devices"`
+	Tests       []testRow    `json:"tests"`
+	Source      *lab.Source  `json:"source"`
+}
+
+type deviceRow struct {
+	Role   string `json:"role"`
+	Device string `json:"device"`
+	Vendor string `json:"vendor"`
+}
+
+type testRow struct {
+	Test         string           `json:"test"`
+	Passed       bool             `json:"passed"`
+	Infra        bool             `json:"infra"`
+	Message      string           `json:"message"`
+	DurationMS   int64            `json:"duration_ms"`
+	Measurements []measurementRow `json:"measurements"`
+}
+
+type measurementRow struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+}
+
+func newJobRow(j *lab.Job, devices map[string]*lab.Device) jobRow {
+	row := jobRow{
+		ID: j.ID, Name: j.Name, Team: j.Team, Priority: j.Priority, State: j.State, Attempts: j.Attempts,
+		SubmittedAt: timestamp(j.Submitted), StartedAt: timestamp(j.Started), EndedAt: timestamp(j.Ended),
+		Devices: []deviceRow{}, Tests: []testRow{}, Source: j.Source,
+	}
+	if !j.Started.IsZero() {
+		wait := seconds(j.Started.Sub(j.Submitted))
+		row.WaitS = &wait
+		if !j.Ended.IsZero() {
+			run := seconds(j.Ended.Sub(j.Started))
+			row.RunS = &run
+		}
+	}
+	for _, r := range j.Roles {
+		if id, ok := j.Assignment[r.Name]; ok {
+			row.Devices = append(row.Devices, deviceRow{r.Name, id, vendorOf(devices, id)})
+		}
+	}
+	for _, r := range j.Results {
+		t := testRow{Test: r.Test, Passed: r.Passed, Infra: r.Infra, Message: r.Message, DurationMS: r.DurationMS,
+			Measurements: []measurementRow{}}
+		for _, k := range slices.Sorted(maps.Keys(r.Measurements)) {
+			t.Measurements = append(t.Measurements, measurementRow{k, r.Measurements[k]})
+		}
+		row.Tests = append(row.Tests, t)
+	}
+	return row
+}
+
+// timestamp formats a time the way BigQuery loads it, or returns nil when the time is unset.
+func timestamp(t time.Time) *string {
+	if t.IsZero() {
+		return nil
+	}
+	s := t.UTC().Format(time.RFC3339)
+	return &s
+}
+
+// seconds rounds a duration to whole milliseconds.
+func seconds(d time.Duration) float64 { return d.Round(time.Millisecond).Seconds() }
 
 func assigned(j *lab.Job, devices map[string]*lab.Device) (devs, vendors string) {
 	var d, v []string

@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -151,7 +153,13 @@ func TestJobsNDJSON(t *testing.T) {
 		WaitS   float64 `json:"wait_s"`
 		RunS    float64 `json:"run_s"`
 		Devices []struct{ Role, Device, Vendor string }
-		Tests   []lab.TestResult
+		Tests   []struct {
+			Test         string
+			Measurements []struct {
+				Name  string
+				Value float64
+			}
+		}
 	}
 	if err := json.NewDecoder(io.LimitReader(strings.NewReader(lines[0]), 1<<20)).Decode(&v); err != nil {
 		t.Fatal(err)
@@ -159,4 +167,136 @@ func TestJobsNDJSON(t *testing.T) {
 	if v.ID != "j-1" || v.WaitS != 5 || v.RunS != 60 || len(v.Devices) != 2 || v.Devices[1].Vendor != "frr" || len(v.Tests) != 2 {
 		t.Fatalf("decoded %+v", v)
 	}
+	if m := v.Tests[1].Measurements; len(m) != 2 || m[0].Name != "detect_s" || m[0].Value != 2.9 || m[1].Name != "recover_s" {
+		t.Fatalf("measurements %+v, want detect_s and recover_s as sorted name/value pairs", m)
+	}
+}
+
+// TestJobsNDJSONMatchesBigQuerySchema checks every exported row against bigquery_schema.json, the
+// schema the README loads the export with, the way a BigQuery load job would.
+func TestJobsNDJSONMatchesBigQuerySchema(t *testing.T) {
+	raw, err := os.ReadFile("bigquery_schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema []bqField
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatal(err)
+	}
+	jobs, devs := sampleJobs()
+	// A job that has not started has no devices, results, start time or source.
+	queued := &lab.Job{JobSpec: lab.JobSpec{Name: "waiting", Team: "wan", Roles: []lab.Role{{Name: "dut"}}},
+		ID: "j-2", State: lab.Queued, Submitted: time.Date(2026, 11, 12, 9, 5, 0, 0, time.UTC)}
+	var buf bytes.Buffer
+	if err := JobsNDJSON(&buf, append(jobs, queued), devs); err != nil {
+		t.Fatal(err)
+	}
+	dec := json.NewDecoder(&buf)
+	dec.UseNumber()
+	rows := 0
+	for dec.More() {
+		var row map[string]any
+		if err := dec.Decode(&row); err != nil {
+			t.Fatal(err)
+		}
+		rows++
+		for _, p := range checkRecord(schema, row, "") {
+			t.Errorf("row %d: %s", rows, p)
+		}
+	}
+	if rows != 2 {
+		t.Fatalf("got %d rows, want 2", rows)
+	}
+}
+
+type bqField struct {
+	Name   string    `json:"name"`
+	Type   string    `json:"type"`
+	Mode   string    `json:"mode"`
+	Fields []bqField `json:"fields"`
+}
+
+func TestSchemaCheckCatchesBadRows(t *testing.T) {
+	schema := []bqField{
+		{Name: "started_at", Type: "TIMESTAMP"},
+		{Name: "tests", Type: "RECORD", Mode: "REPEATED", Fields: []bqField{
+			{Name: "measurements", Type: "RECORD", Mode: "REPEATED", Fields: []bqField{{Name: "name", Type: "STRING", Mode: "REQUIRED"}}},
+		}},
+	}
+	// The export's earlier shape: an empty string for a time that has not happened, and
+	// measurements as an object whose keys differ from test to test.
+	var row map[string]any
+	dec := json.NewDecoder(strings.NewReader(`{"started_at": "", "tests": [{"measurements": {"detect_s": 2.9}}], "extra": 1}`))
+	dec.UseNumber()
+	if err := dec.Decode(&row); err != nil {
+		t.Fatal(err)
+	}
+	if p := checkRecord(schema, row, ""); len(p) != 3 {
+		t.Fatalf("problems = %q, want 3 (started_at, tests[0].measurements, extra)", p)
+	}
+}
+
+// checkRecord lists the ways a JSON object breaks a BigQuery schema. It is stricter than BigQuery
+// in one way: repeated fields must be arrays, never missing or null.
+func checkRecord(fields []bqField, obj map[string]any, path string) []string {
+	var problems []string
+	known := map[string]bool{}
+	for _, f := range fields {
+		known[f.Name] = true
+		v, present := obj[f.Name]
+		name := path + f.Name
+		switch {
+		case f.Mode == "REPEATED":
+			arr, ok := v.([]any)
+			if !ok {
+				problems = append(problems, fmt.Sprintf("%s: want an array, got %v", name, v))
+				continue
+			}
+			for i, e := range arr {
+				problems = append(problems, checkValue(f, e, fmt.Sprintf("%s[%d]", name, i))...)
+			}
+		case !present || v == nil:
+			if f.Mode == "REQUIRED" {
+				problems = append(problems, name+": required but missing")
+			}
+		default:
+			problems = append(problems, checkValue(f, v, name)...)
+		}
+	}
+	for k := range obj {
+		if !known[k] {
+			problems = append(problems, path+k+": not in the schema")
+		}
+	}
+	return problems
+}
+
+func checkValue(f bqField, v any, name string) []string {
+	ok := false
+	switch f.Type {
+	case "STRING":
+		_, ok = v.(string)
+	case "TIMESTAMP":
+		if s, isString := v.(string); isString {
+			_, err := time.Parse(time.RFC3339, s)
+			ok = err == nil
+		}
+	case "INTEGER":
+		if n, isNumber := v.(json.Number); isNumber {
+			_, err := n.Int64()
+			ok = err == nil
+		}
+	case "FLOAT":
+		_, ok = v.(json.Number)
+	case "BOOLEAN":
+		_, ok = v.(bool)
+	case "RECORD":
+		if obj, isObject := v.(map[string]any); isObject {
+			return checkRecord(f.Fields, obj, name+".")
+		}
+	}
+	if !ok {
+		return []string{fmt.Sprintf("%s: %v is not a %s", name, v, f.Type)}
+	}
+	return nil
 }
