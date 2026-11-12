@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The NanoNOS commit the lab job runs. NanoNOS is a separate repository.
+  NANONOS_REF: a0b6a9ba94194ddaf7fa9eef16fbb976e3e0c6ae
+
+jobs:
+  go:
+    name: Go (vet, race tests, fuzzing, govulncheck)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.x"
+          check-latest: true
+          cache: false
+      - name: Format and vet
+        run: |
+          unformatted=$(gofmt -l .)
+          [ -z "$unformatted" ] || { echo "Run gofmt on: $unformatted"; exit 1; }
+          go vet ./...
+      - name: Test with the race detector
+        run: go test -race -count=1 ./...
+      - name: Fuzz the write-ahead log decoder (60 s)
+        run: |
+          go test -run '^$' -fuzz '^FuzzDecode$' -fuzztime 60s ./internal/wal 2>&1 | tee fuzz.log
+          n=$(grep -o 'execs: [0-9]*' fuzz.log | tail -1 | grep -o '[0-9]*')
+          echo "Write-ahead log decoder fuzzed with $n inputs in 60 s, no crashes." >> "$GITHUB_STEP_SUMMARY"
+      - name: Known vulnerabilities (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  lab:
+    name: Real devices (NanoNOS and FRRouting in network namespaces)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      statuses: write # LabQ sets a commit status for the GitHub push it is sent
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: yasaswinivardhireddy-png/nanonos
+          ref: ${{ env.NANONOS_REF }}
+          path: nanonos
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.x"
+          check-latest: true
+          cache: false
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build iproute2 ethtool jq frr
+      - name: Build NanoNOS
+        run: |
+          cmake -S nanonos -B nanonos/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DNANONOS_BUILD_TESTS=OFF -DNANONOS_BUILD_BENCH=OFF
+          cmake --build nanonos/build
+      - run: go build -o labq ./cmd/labq
+      - name: Run the lab scenarios
+        env:
+          NANONOS: ${{ github.workspace }}/nanonos/build
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: sudo -E bash scripts/lab.sh
+      - name: Collect exports, logs and the write-ahead log
+        if: always()
+        run: |
+          mkdir -p lab-run
+          sudo sh -c 'cp /tmp/labq-lab/*.csv /tmp/labq-lab/*.ndjson /tmp/labq-lab/*.log /tmp/labq-lab/*.wal lab-run/ 2> /dev/null; cp /tmp/labq-lab/frr/bgpd.log lab-run/frr-bgpd.log 2> /dev/null; true'
+          sudo chown -R "$(id -u):$(id -g)" lab-run
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lab-run
+          path: lab-run/
+          if-no-files-found: ignore
+
+  e2e:
+    name: Dashboard (Playwright, axe WCAG 2.2 AA, keyboard, reflow)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.x"
+          check-latest: true
+          cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: go build -o labq ./cmd/labq
+      - name: Install the test runner and Chromium
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Run the browser tests
+        working-directory: e2e
+        env:
+          SCREENSHOT_DIR: ${{ github.workspace }}/screenshots
+        run: |
+          mkdir -p "$SCREENSHOT_DIR"
+          npx playwright test
+      - name: Upload screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: |
+            screenshots/
+            e2e/playwright-report/
+          if-no-files-found: ignore

@@ -1,0 +1,66 @@
+{{define "content"}}
+<h1>Reservations</h1>
+<p>Reserve devices for manual work or for your team's jobs. While a reservation lasts, only jobs submitted with it can use its devices.</p>
+{{if .Created}}<p class="notice success">Reservation {{.Created}} created.</p>{{end}}
+{{template "errorsummary" .}}
+
+<h2 id="active-title">Current and upcoming</h2>
+{{if .Active}}
+<div class="table-scroll" role="region" aria-labelledby="active-title" tabindex="0">
+<table>
+  <caption class="visually-hidden">Reservations that have not ended</caption>
+  <thead><tr><th scope="col">Reservation</th><th scope="col">Owner</th><th scope="col">Devices</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Purpose</th><th scope="col">Action</th></tr></thead>
+  <tbody>
+  {{range .Active}}
+  <tr>
+    <th scope="row">{{.ID}}</th>
+    <td>{{.Owner}}</td>
+    <td>{{join .Devices ", "}}</td>
+    <td>{{when .Start}}</td>
+    <td>{{when .End}}</td>
+    <td>{{.Purpose}}</td>
+    <td><form method="post" action="/reservations/{{.ID}}/cancel"><button type="submit" class="small" aria-label="Cancel reservation {{.ID}}">Cancel</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p>No current or upcoming reservations.</p>{{end}}
+
+<h2>Reserve devices</h2>
+{{$f := .Form}}
+<form method="post" action="/reservations" class="form" novalidate>
+  <div class="field{{if index $f.Errors "owner"}} has-error{{end}}">
+    <label for="owner">Owner</label>
+    <p class="hint" id="owner-hint">A person or team, for example wan-oncall.</p>
+    {{template "fielderror" (ferr $f "owner")}}
+    <input type="text" id="owner" name="owner" value="{{index $f.Values "owner"}}" aria-describedby="{{describedby $f "owner" true}}"{{if index $f.Errors "owner"}} aria-invalid="true"{{end}} autocomplete="off">
+  </div>
+  <fieldset class="field{{if index $f.Errors "devices"}} has-error{{end}}"{{if index $f.Errors "devices"}} aria-describedby="devices-error"{{end}}>
+    <legend>Devices</legend>
+    {{template "fielderror" (ferr $f "devices")}}
+    {{range $i, $d := .Devices}}
+    <div class="choice"><input type="checkbox" id="{{if eq $i 0}}devices{{else}}devices-{{$d.ID}}{{end}}" name="devices" value="{{$d.ID}}"{{if index $f.Selected $d.ID}} checked{{end}}><label for="{{if eq $i 0}}devices{{else}}devices-{{$d.ID}}{{end}}">{{$d.ID}} <span class="muted">({{$d.Vendor}}; {{join $d.Capabilities ", "}})</span></label></div>
+    {{end}}
+  </fieldset>
+  <div class="field{{if index $f.Errors "start"}} has-error{{end}}">
+    <label for="start">Start (UTC)</label>
+    <p class="hint" id="start-hint">Leave empty to start now.</p>
+    {{template "fielderror" (ferr $f "start")}}
+    <input type="datetime-local" id="start" name="start" value="{{index $f.Values "start"}}" aria-describedby="{{describedby $f "start" true}}"{{if index $f.Errors "start"}} aria-invalid="true"{{end}}>
+  </div>
+  <div class="field{{if index $f.Errors "duration"}} has-error{{end}}">
+    <label for="duration">Length in minutes</label>
+    <p class="hint" id="duration-hint">Up to 7 days (10,080 minutes).</p>
+    {{template "fielderror" (ferr $f "duration")}}
+    <input type="text" inputmode="numeric" id="duration" name="duration" class="short" value="{{index $f.Values "duration"}}" aria-describedby="{{describedby $f "duration" true}}"{{if index $f.Errors "duration"}} aria-invalid="true"{{end}}>
+  </div>
+  <div class="field{{if index $f.Errors "purpose"}} has-error{{end}}">
+    <label for="purpose">Purpose (optional)</label>
+    <p class="hint" id="purpose-hint">Up to 200 characters.</p>
+    {{template "fielderror" (ferr $f "purpose")}}
+    <input type="text" id="purpose" name="purpose" value="{{index $f.Values "purpose"}}" aria-describedby="{{describedby $f "purpose" true}}"{{if index $f.Errors "purpose"}} aria-invalid="true"{{end}} maxlength="200">
+  </div>
+  <button type="submit" class="primary">Reserve</button>
+</form>
+{{end}}

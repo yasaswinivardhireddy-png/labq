@@ -1,0 +1,28 @@
+{
+  "devices": [
+    {"id": "nanonos-1", "vendor": "nanonos", "model": "NanoNOS switch (userspace data plane, Linux netns)", "capabilities": ["bgp", "lldp", "admin-shutdown", "tcp-md5", "ecmp"], "driver": {"kind": "nanonos", "socket": "/tmp/labq-lab/nanonos-1.sock"}},
+    {"id": "nanonos-2", "vendor": "nanonos", "model": "NanoNOS switch (userspace data plane, Linux netns)", "capabilities": ["bgp", "lldp", "admin-shutdown", "tcp-md5", "ecmp"], "driver": {"kind": "nanonos", "socket": "/tmp/labq-lab/nanonos-2.sock"}},
+    {"id": "frr-1", "vendor": "frrouting", "model": "FRRouting bgpd (Ubuntu package, Linux netns)", "capabilities": ["bgp", "tcp-md5"], "driver": {"kind": "frr", "netns": "lq-frr", "vtySocket": "/tmp/labq-lab/frr"}}
+  ],
+  "links": [
+    {"a": {"device": "nanonos-1", "port": "Ethernet0", "ip": "10.0.0.0"}, "b": {"device": "frr-1", "port": "eth0", "ip": "10.0.0.1"}},
+    {"a": {"device": "nanonos-1", "port": "Ethernet1", "ip": "10.0.1.0"}, "b": {"device": "nanonos-2", "port": "Ethernet0", "ip": "10.0.1.1"}}
+  ],
+  "teams": [{"name": "wan", "weight": 2}, {"name": "datacenter", "weight": 1}, {"name": "ci", "weight": 1}],
+  "presets": {
+    "interop": {
+      "description": "eBGP with TCP-MD5 between a NanoNOS switch and an FRRouting router.",
+      "roles": [{"name": "switch", "vendor": "nanonos", "capabilities": ["bgp", "tcp-md5"]}, {"name": "router", "vendor": "frrouting", "capabilities": ["bgp", "tcp-md5"]}],
+      "cables": [{"a": "switch", "b": "router"}],
+      "tests": ["reachable", "bgp-established", "routes-exchanged"],
+      "timeoutSec": 120
+    },
+    "fabric": {
+      "description": "Two cabled NanoNOS switches: BGP, LLDP and a link failover.",
+      "roles": [{"name": "dut", "vendor": "nanonos", "capabilities": ["bgp", "lldp", "admin-shutdown"]}, {"name": "peer", "vendor": "nanonos", "capabilities": ["bgp", "lldp"]}],
+      "cables": [{"a": "dut", "b": "peer"}],
+      "tests": ["reachable", "bgp-established", "routes-exchanged", "lldp-neighbors", "link-failover"],
+      "timeoutSec": 180
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{{define "content"}}
+<h1>Submit a job</h1>
+<p>Pick what to test. The scheduler finds free devices with the right vendor, capabilities and cabling, runs the tests and records every result.</p>
+{{template "errorsummary" .}}
+{{$f := .Form}}
+<form method="post" action="/jobs/new" class="form" novalidate>
+  <fieldset class="field{{if index $f.Errors "preset"}} has-error{{end}}"{{if index $f.Errors "preset"}} aria-describedby="preset-error"{{end}}>
+    <legend>What to test</legend>
+    {{template "fielderror" (ferr $f "preset")}}
+    {{range $i, $p := .Presets}}
+    <div class="choice">
+      <input type="radio" id="{{if eq $i 0}}preset{{else}}preset-{{$p.Name}}{{end}}" name="preset" value="{{$p.Name}}" aria-describedby="preset-{{$p.Name}}-hint"{{if eq (index $f.Values "preset") $p.Name}} checked{{end}}>
+      <label for="{{if eq $i 0}}preset{{else}}preset-{{$p.Name}}{{end}}">{{$p.Name}}</label>
+      <p class="hint" id="preset-{{$p.Name}}-hint">{{$p.Description}} Tests: {{join $p.Tests ", "}}.</p>
+    </div>
+    {{end}}
+  </fieldset>
+  <div class="field{{if index $f.Errors "name"}} has-error{{end}}">
+    <label for="name">Job name</label>
+    <p class="hint" id="name-hint">Lowercase letters, numbers, dots, dashes or underscores, such as bgp-interop-7.</p>
+    {{template "fielderror" (ferr $f "name")}}
+    <input type="text" id="name" name="name" value="{{index $f.Values "name"}}" aria-describedby="{{describedby $f "name" true}}"{{if index $f.Errors "name"}} aria-invalid="true"{{end}} autocomplete="off" spellcheck="false">
+  </div>
+  <div class="field{{if index $f.Errors "team"}} has-error{{end}}">
+    <label for="team">Team</label>
+    {{template "fielderror" (ferr $f "team")}}
+    <select id="team" name="team"{{with describedby $f "team" false}} aria-describedby="{{.}}"{{end}}{{if index $f.Errors "team"}} aria-invalid="true"{{end}}>
+      <option value="">Choose a team</option>
+      {{range .Teams}}<option value="{{.}}"{{if eq (index $f.Values "team") .}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </div>
+  <fieldset class="field">
+    <legend>Priority</legend>
+    <div class="choice"><input type="radio" id="priority" name="priority" value="0"{{if eq (index $f.Values "priority") "0"}} checked{{end}}><label for="priority">Low</label></div>
+    <div class="choice"><input type="radio" id="priority-1" name="priority" value="1"{{if eq (index $f.Values "priority") "1"}} checked{{end}}><label for="priority-1">Normal</label></div>
+    <div class="choice"><input type="radio" id="priority-2" name="priority" value="2"{{if eq (index $f.Values "priority") "2"}} checked{{end}}><label for="priority-2">High</label></div>
+  </fieldset>
+  <div class="field{{if index $f.Errors "reservation"}} has-error{{end}}">
+    <label for="reservation">Reservation</label>
+    <p class="hint" id="reservation-hint">Run on your reserved devices, during the reservation.</p>
+    {{template "fielderror" (ferr $f "reservation")}}
+    <select id="reservation" name="reservation" aria-describedby="{{describedby $f "reservation" true}}"{{if index $f.Errors "reservation"}} aria-invalid="true"{{end}}>
+      <option value="">None: use the shared pool</option>
+      {{range .Reservations}}<option value="{{.ID}}"{{if eq (index $f.Values "reservation") .ID}} selected{{end}}>{{.ID}}: {{.Owner}}, {{join .Devices ", "}}</option>{{end}}
+    </select>
+  </div>
+  <button type="submit" class="primary">Submit job</button>
+</form>
+{{end}}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{.Title}} · LabQ</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<header class="topbar">
+  <a class="brand" href="/"><img src="/static/favicon.svg" alt="" width="24" height="24"> LabQ</a>
+  <nav aria-label="Main">
+    <ul>
+      <li><a href="/"{{if eq .Nav "overview"}} aria-current="page"{{end}}>Overview</a></li>
+      <li><a href="/jobs/new"{{if eq .Nav "newjob"}} aria-current="page"{{end}}>Submit a job</a></li>
+      <li><a href="/reservations"{{if eq .Nav "reservations"}} aria-current="page"{{end}}>Reservations</a></li>
+    </ul>
+  </nav>
+</header>
+<main id="main" tabindex="-1">
+{{template "content" .}}
+</main>
+<footer class="footer">
+  <p>For BI tools: <a href="/api/v1/export/results.csv">test results (CSV)</a> · <a href="/api/v1/export/jobs.ndjson">jobs (newline-delimited JSON)</a> · <a href="/metrics">Prometheus metrics</a>. Times are in UTC.</p>
+</footer>
+</body>
+</html>
+{{define "devstatus"}}{{if .Busy}}<span class="badge badge-busy"><span aria-hidden="true">▶</span> Busy: <a href="/jobs/{{.Job}}">{{.Job}}</a></span>{{else if eq .Status "available"}}<span class="badge badge-ok"><span aria-hidden="true">✓</span> Available</span>{{else if eq .Status "quarantined"}}<span class="badge badge-bad"><span aria-hidden="true">✕</span> Quarantined</span>{{else}}<span class="badge badge-muted"><span aria-hidden="true">◌</span> Maintenance</span>{{end}}{{end}}
+{{define "jobstate"}}{{if eq . "passed"}}<span class="badge badge-ok"><span aria-hidden="true">✓</span> Passed</span>{{else if eq . "failed"}}<span class="badge badge-bad"><span aria-hidden="true">✕</span> Failed</span>{{else if eq . "error"}}<span class="badge badge-warn"><span aria-hidden="true">⚠</span> Lab error</span>{{else if eq . "running"}}<span class="badge badge-busy"><span aria-hidden="true">▶</span> Running</span>{{else if eq . "queued"}}<span class="badge badge-muted"><span aria-hidden="true">◷</span> Queued</span>{{else}}<span class="badge badge-muted"><span aria-hidden="true">–</span> Cancelled</span>{{end}}{{end}}
+{{define "errorsummary"}}{{if .ErrorOrder}}
+<div class="error-summary" aria-labelledby="error-summary-title" role="alert">
+  <h2 id="error-summary-title">There is a problem</h2>
+  <ul>{{range .ErrorOrder}}<li><a href="#{{anchor .}}">{{index $.Form.Errors .}}</a></li>{{end}}</ul>
+</div>
+{{end}}{{end}}
+{{define "fielderror"}}{{if .Msg}}<p class="field-error" id="{{.ID}}"><span class="visually-hidden">Error:</span> {{.Msg}}</p>{{end}}{{end}}

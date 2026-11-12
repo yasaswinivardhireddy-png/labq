@@ -1,0 +1,53 @@
+{{define "content"}}
+{{$j := .Job}}
+<h1>{{$j.Name}} {{template "jobstate" (print $j.State)}}</h1>
+{{if .Cancelling}}<p class="notice">Cancellation requested. A running job stops at its next check and restores any port it shut. <a href="/jobs/{{$j.ID}}">Refresh</a> to see the result.</p>{{end}}
+{{if $j.Message}}<p class="lead">{{$j.Message}}</p>{{end}}
+<dl class="details">
+  <dt>Job ID</dt><dd>{{$j.ID}}</dd>
+  <dt>Team</dt><dd>{{$j.Team}}</dd>
+  <dt>Priority</dt><dd>{{priority $j.Priority}}</dd>
+  {{with $j.Source}}<dt>Triggered by</dt><dd>GitHub {{.Kind}} to {{.Repo}}{{if .PR}} (pull request #{{.PR}}){{end}} at commit <code>{{.SHA}}</code>{{if .URL}}: <a href="{{.URL}}">view on GitHub</a>{{end}}</dd>{{end}}
+  <dt>Needs</dt><dd>{{needs $j.Roles}}{{range $j.Cables}}; cable {{.A}} to {{.B}}{{end}}</dd>
+  <dt>Tests</dt><dd>{{join $j.Tests ", "}}</dd>
+  <dt>Timeout</dt><dd>{{$j.TimeoutSec}} s</dd>
+  {{if $j.Reservation}}<dt>Reservation</dt><dd>{{$j.Reservation}}</dd>{{end}}
+  <dt>Submitted</dt><dd>{{when $j.Submitted}}</dd>
+  {{if eq (print $j.State) "queued"}}<dt>Queue position</dt><dd>{{.Position}}</dd>{{end}}
+  {{if not $j.Started.IsZero}}<dt>Last started</dt><dd>{{when $j.Started}}</dd>{{end}}
+  {{if not $j.Ended.IsZero}}<dt>Ended</dt><dd>{{when $j.Ended}}</dd>{{end}}
+  <dt>Attempts</dt><dd>{{$j.Attempts}}</dd>
+  {{if .Members}}<dt>Devices</dt><dd>{{range .Members}}<span class="nowrap">{{.Role}}: <a href="/devices/{{.Device}}">{{.Device}}</a></span> {{end}}</dd>{{end}}
+</dl>
+{{if .Cancellable}}
+<form method="post" action="/jobs/{{$j.ID}}/cancel"><button type="submit" class="danger">Cancel job</button></form>
+{{end}}
+
+<h2 id="results-title">Test results</h2>
+{{if $j.Results}}
+<div class="table-scroll" role="region" aria-labelledby="results-title" tabindex="0">
+<table>
+  <caption class="visually-hidden">Results of the latest attempt</caption>
+  <thead><tr><th scope="col">Test</th><th scope="col">Result</th><th scope="col" class="num">Duration</th><th scope="col">Measurements</th><th scope="col">Details</th></tr></thead>
+  <tbody>
+  {{range $j.Results}}
+  <tr>
+    <th scope="row">{{.Test}}</th>
+    <td>{{if .Passed}}<span class="badge badge-ok"><span aria-hidden="true">✓</span> Passed</span>{{else if .Infra}}<span class="badge badge-warn"><span aria-hidden="true">⚠</span> Lab failure</span>{{else}}<span class="badge badge-bad"><span aria-hidden="true">✕</span> Failed</span>{{end}}</td>
+    <td class="num">{{secs .DurationMS}}</td>
+    <td>{{measure .Measurements}}</td>
+    <td>{{.Message}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>No results yet.</p>
+{{end}}
+
+<h2>History</h2>
+<ol class="timeline">
+{{range $j.History}}<li><span class="time">{{when .At}}</span> {{.Text}}</li>{{end}}
+</ol>
+{{end}}

@@ -1,0 +1,80 @@
+{{define "content"}}
+<h1>Lab overview</h1>
+<p class="muted">As of {{when .Now}}. <a href="/">Refresh</a> to see changes.</p>
+<dl class="stats">
+  <div><dt>Available devices</dt><dd>{{index .Counts "available"}}</dd></div>
+  <div><dt>Busy devices</dt><dd>{{index .Counts "busy"}}</dd></div>
+  <div><dt>Quarantined devices</dt><dd>{{index .Counts "quarantined"}}</dd></div>
+  <div><dt>In maintenance</dt><dd>{{index .Counts "maintenance"}}</dd></div>
+  <div><dt>Queued jobs</dt><dd>{{len .Queue}}</dd></div>
+</dl>
+
+<h2 id="devices-title">Devices</h2>
+<div class="table-scroll" role="region" aria-labelledby="devices-title" tabindex="0">
+<table>
+  <caption class="visually-hidden">Lab devices, what they can do and what they are doing</caption>
+  <thead><tr><th scope="col">Device</th><th scope="col">Vendor and model</th><th scope="col">Capabilities</th><th scope="col">Status</th><th scope="col">Reserved in the next 24 hours</th><th scope="col" class="num">Jobs run</th><th scope="col" class="num">Failures in a row</th></tr></thead>
+  <tbody>
+  {{range .Devices}}
+  <tr>
+    <th scope="row"><a href="/devices/{{.ID}}">{{.ID}}</a></th>
+    <td>{{.Vendor}}, {{.Model}}</td>
+    <td>{{join .Capabilities ", "}}</td>
+    <td>{{template "devstatus" .}}</td>
+    <td>{{range .Reservations}}<span class="nowrap">{{.Owner}}: {{when .Start}} to {{when .End}}</span> {{else}}None{{end}}</td>
+    <td class="num">{{.JobsRun}}</td>
+    <td class="num">{{.Failures}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+
+<h2 id="queue-title">Queue</h2>
+{{if .Queue}}
+<div class="table-scroll" role="region" aria-labelledby="queue-title" tabindex="0">
+<table>
+  <caption class="visually-hidden">Queued jobs in the order the scheduler will consider them</caption>
+  <thead><tr><th scope="col" class="num">Position</th><th scope="col">Job</th><th scope="col">Team</th><th scope="col">Priority</th><th scope="col">Needs</th><th scope="col">Submitted</th></tr></thead>
+  <tbody>
+  {{range $i, $j := .Queue}}
+  <tr>
+    <td class="num">{{inc $i}}</td>
+    <th scope="row"><a href="/jobs/{{$j.ID}}">{{$j.Name}}</a></th>
+    <td>{{$j.Team}}</td>
+    <td>{{priority $j.Priority}}</td>
+    <td>{{needs $j.Roles}}</td>
+    <td>{{when $j.Submitted}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>No jobs are waiting.</p>
+{{end}}
+
+<h2 id="recent-title">Recent jobs</h2>
+{{if .Recent}}
+<div class="table-scroll" role="region" aria-labelledby="recent-title" tabindex="0">
+<table>
+  <caption class="visually-hidden">The 15 most recent jobs that started</caption>
+  <thead><tr><th scope="col">Job</th><th scope="col">Team</th><th scope="col">Result</th><th scope="col">Devices</th><th scope="col">Summary</th><th scope="col">Ended</th></tr></thead>
+  <tbody>
+  {{range .Recent}}
+  <tr>
+    <th scope="row"><a href="/jobs/{{.ID}}">{{.Name}}</a></th>
+    <td>{{.Team}}</td>
+    <td>{{template "jobstate" (print .State)}}</td>
+    <td>{{range $role, $dev := .Assignment}}<span class="nowrap">{{$role}}: {{$dev}}</span> {{end}}</td>
+    <td>{{.Message}}</td>
+    <td>{{when .Ended}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p>No jobs have run yet. <a href="/jobs/new">Submit a job</a>.</p>
+{{end}}
+{{end}}

@@ -1,0 +1,53 @@
+{{define "content"}}
+{{$d := .Device}}
+<h1>{{$d.ID}}</h1>
+<dl class="details">
+  <dt>Vendor and model</dt><dd>{{$d.Vendor}}, {{$d.Model}}</dd>
+  <dt>Capabilities</dt><dd>{{join $d.Capabilities ", "}}</dd>
+  <dt>Status</dt><dd>{{template "devstatus" .Row}}{{if $d.Note}} ({{$d.Note}}){{end}}</dd>
+  <dt>Failures in a row</dt><dd>{{$d.Failures}} (quarantined at 3)</dd>
+  <dt>Jobs run</dt><dd>{{$d.JobsRun}}</dd>
+</dl>
+
+<h2>Cables</h2>
+{{if .Cables}}
+<ul>
+{{range .Cables}}<li>{{.A.Port}}{{if .A.IP}} ({{.A.IP}}){{end}} to <a href="/devices/{{.B.Device}}">{{.B.Device}}</a> {{.B.Port}}{{if .B.IP}} ({{.B.IP}}){{end}}</li>{{end}}
+</ul>
+{{else}}<p>No cables.</p>{{end}}
+
+<h2>Change status</h2>
+<form method="post" action="/devices/{{$d.ID}}/status" class="form">
+  <fieldset class="field">
+    <legend>New status</legend>
+    <div class="choice"><input type="radio" id="status" name="status" value="available" checked><label for="status">Return to service</label></div>
+    <div class="choice"><input type="radio" id="status-maintenance" name="status" value="maintenance"><label for="status-maintenance">Take out for maintenance</label></div>
+  </fieldset>
+  <div class="field">
+    <label for="note">Note</label>
+    <p class="hint" id="note-hint">For example, what was repaired.</p>
+    <input type="text" id="note" name="note" aria-describedby="note-hint" maxlength="200">
+  </div>
+  <button type="submit">Update status</button>
+</form>
+
+<h2 id="res-title">Reservations</h2>
+{{if .Reservations}}
+<ul>{{range .Reservations}}<li>{{.Owner}}: {{when .Start}} to {{when .End}}{{if .Purpose}} ({{.Purpose}}){{end}}</li>{{end}}</ul>
+{{else}}<p>None.</p>{{end}}
+
+<h2 id="jobs-title">Recent jobs on this device</h2>
+{{if .Jobs}}
+<div class="table-scroll" role="region" aria-labelledby="jobs-title" tabindex="0">
+<table>
+  <caption class="visually-hidden">The last 10 jobs that used {{$d.ID}}</caption>
+  <thead><tr><th scope="col">Job</th><th scope="col">Result</th><th scope="col">Summary</th><th scope="col">Ended</th></tr></thead>
+  <tbody>
+  {{range .Jobs}}
+  <tr><th scope="row"><a href="/jobs/{{.ID}}">{{.Name}}</a></th><td>{{template "jobstate" (print .State)}}</td><td>{{.Message}}</td><td>{{when .Ended}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}<p>None yet.</p>{{end}}
+{{end}}
